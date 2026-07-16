@@ -144,11 +144,13 @@ O modelo padrão é `claude-sonnet-4-6`, configurável via `CLAUDE_MODEL` sem me
 
 ### Passo 7 — Groq (transcrição de áudio, opcional mas MUITO recomendado)
 
-Se você preencher `GROQ_API_KEY`, o ingest transcreve o áudio de cada vídeo e passa a transcrição pra IA junto com o nome do arquivo. Resultado: títulos e descrições baseados no que você **fala**, não só no nome do arquivo. Especialmente útil pra vídeos exportados com nomes tipo `IMG_2831.mp4`.
+Se você preencher `GROQ_API_KEY`, o ingest extrai o áudio de cada vídeo (via FFmpeg, embutido no projeto) e manda pra Groq transcrever. O texto vai pra IA junto com o nome do arquivo, então título e descrição saem baseados no que você **fala**, não só no nome do arquivo. Especialmente útil pra vídeos exportados com nomes tipo `IMG_2831.mp4`.
 
 - Cadastro grátis em [console.groq.com](https://console.groq.com) → API Keys → Create Key.
 - Custo: ~US$ 0,04/hora de áudio, com free tier de 2000 requests/dia.
 - Modelo usado: `whisper-large-v3-turbo` (multilíngue, ótimo em português).
+- **Por que extrai o áudio em vez de mandar o vídeo inteiro:** a Groq tem um limite de 25 MB por arquivo — e isso vale tanto pra upload direto quanto pra envio por URL. Um Short de 30-60s facilmente passa de 25 MB de vídeo, mas o **áudio sozinho** (comprimido em MP3 mono 64kbps) fica na casa de algumas centenas de KB, não importa o quão grande seja o vídeo. Por isso o pipeline extrai só o áudio antes de mandar.
+- O FFmpeg usado é um binário estático (`@ffmpeg-installer/ffmpeg`), empacotado junto no deploy — não precisa instalar nada à parte. Isso deixa o bundle da função ~70 MB maior, ainda bem dentro do limite de funções serverless da Vercel.
 
 Sem essa chave o pipeline segue funcionando; só perde a etapa de transcrição.
 
@@ -193,7 +195,7 @@ A cota padrão da API permite ~6 uploads/dia — 1/dia passa folgado.
 No plano **Hobby**, o horário do cron pode variar dentro da hora. No plano **Pro**, o disparo é pontual. Se precisar de precisão sem pagar Pro, use um serviço como [cron-job.org](https://cron-job.org) chamando as URLs com o header `Authorization: Bearer SEU_CRON_SECRET`.
 
 ### 3. Tamanho dos arquivos e limite de execução
-O pipeline foi desenhado para **Shorts/Reels** (arquivos de até ~150 MB, mas idealmente menores). No plano Hobby da Vercel, funções têm limite de **10 segundos** — por isso o ingest processa 1 vídeo por chamada. Se um vídeo específico precisar de muito processamento (ex: transcrição de vídeo longo), pode estourar. Nesse caso, a linha simplesmente não entra na fila e você pode tentar de novo.
+O pipeline foi desenhado para **Shorts/Reels** (arquivos de até ~150 MB, mas idealmente menores). No plano Hobby da Vercel, funções têm limite de **10 segundos** — por isso o ingest processa 1 vídeo por chamada. Dentro desses 10s cabem: baixar o vídeo do Drive, extrair o áudio (rápido, geralmente menos de 1s para um Short), transcrever na Groq e gerar os metadados na Anthropic. Para a maioria dos Shorts isso roda em 3-8s. Se algum vídeo específico estourar o tempo (rede lenta, vídeo maior que o normal), a linha simplesmente não entra na fila naquela tentativa — não há corrupção de dados, é só rodar o ingest de novo.
 
 ---
 
@@ -246,6 +248,7 @@ app/
   page.tsx                    # painel de status (somente leitura)
 lib/
   ai.ts        # monta o prompt com channel.config.ts e chama Anthropic
+  audio.ts     # extração de áudio via FFmpeg (para a transcrição)
   destinos.ts  # lógica de plataformas por vídeo
   drive.ts     # listagem e download dos vídeos das pastas
   sheets.ts    # a planilha-fila

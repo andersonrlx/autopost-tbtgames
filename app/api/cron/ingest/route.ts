@@ -3,10 +3,11 @@ import { isAuthorizedCron, config } from "@/lib/env";
 import { listVideos, getVideoBuffer } from "@/lib/drive";
 import { ensureHeader, getRows, appendRows } from "@/lib/sheets";
 import { generateMetadata } from "@/lib/ai";
-import { transcribeUrl } from "@/lib/transcribe";
-import { uploadTempVideo, deleteTempVideo } from "@/lib/blob";
+import { extractAudio } from "@/lib/audio";
+import { transcribeAudioBuffer } from "@/lib/transcribe";
+import { uploadTempVideo } from "@/lib/blob";
 import { nextPublishDates, spDateString } from "@/lib/schedule";
-import { formatDestinos } from "@/lib/destinos";
+import { formatDestinos, parseDestinos } from "@/lib/destinos";
 
 export const maxDuration = 60; // no plano Hobby, é ignorado — teto real é 10s
 export const dynamic = "force-dynamic";
@@ -17,11 +18,14 @@ export const dynamic = "force-dynamic";
  * Fluxo:
  *  1. Lista as pastas do Drive
  *  2. Pega o PRÓXIMO vídeo que ainda não está na planilha
- *  3. Se Groq configurado: baixa → sobe pro Blob → transcreve via URL
- *     (via URL escapa do limite de 25 MB da API da Groq)
- *  4. Gera metadados com nome + transcrição + destinos
- *  5. Salva na planilha guardando a blob_url — o publish reaproveita
- *     depois, evitando um novo download/upload
+ *  3. Se precisar do buffer (Groq ligado, ou destino inclui IG/FB), baixa 1x
+ *  4. Se Groq configurado: extrai só o ÁUDIO (via FFmpeg) e transcreve.
+ *     Extrair o áudio evita o limite de 25 MB da Groq — o vídeo inteiro
+ *     de um Short passa fácil desse teto, o áudio sozinho não chega perto.
+ *  5. Se o destino inclui Instagram/Facebook: sobe o VÍDEO pro Blob, para
+ *     o publish reaproveitar depois (YouTube usa stream direto do Drive,
+ *     não precisa de Blob).
+ *  6. Gera metadados com nome + transcrição + destinos, salva na planilha
  *
  * Batch upload (encher a fila de uma vez):
  *   for i in {1..30}; do
@@ -49,6 +53,7 @@ export async function GET(request: Request) {
   // Pega SÓ o primeiro vídeo — a ordem já veio cronológica de listVideos()
   const video = pending[0];
   const destinos = formatDestinos(video.destinosPadrao);
+  const destinosSet = new Set(parseDestinos(destinos));
 
   // Descobre o próximo slot livre respeitando os já agendados
   const taken = new Set(
@@ -59,38 +64,48 @@ export async function GET(request: Request) {
   const [dataAgendada] = nextPublishDates(1, taken);
   const initialStatus = config.autoApprove() ? "aprovado" : "novo";
 
-  // 1. Se Groq habilitado: baixa do Drive, sobe pro Blob, transcreve por URL.
-  //    A blob_url é preservada na planilha e reaproveitada pelo publish.
+  const needsMetaBlob = destinosSet.has("instagram") || destinosSet.has("facebook");
+  const needsBuffer = config.hasGroq() || needsMetaBlob;
+
   let transcript = "";
   let transcribeWarning = "";
   let blobUrl = "";
 
-  if (config.hasGroq()) {
+  if (needsBuffer) {
     try {
       const buffer = await getVideoBuffer(video.id);
-      blobUrl = await uploadTempVideo(video.name, buffer);
-      console.log(`[ingest] "${video.name}" ${buffer.length} bytes no Blob`);
+      console.log(`[ingest] "${video.name}" baixado: ${buffer.length} bytes`);
 
-      const result = await transcribeUrl(blobUrl, video.name);
-      if (result.hasContent) {
-        transcript = result.text;
-        console.log(`[ingest] transcrição ok: ${result.text.length} chars`);
-      } else {
-        transcribeWarning = "sem transcrição: áudio sem fala detectável";
-        console.log(`[ingest] transcript vazio para "${video.name}"`);
+      // Transcrição: extrai só o áudio (pequeno) e sobe direto pra Groq
+      if (config.hasGroq()) {
+        try {
+          const audio = await extractAudio(buffer);
+          console.log(`[ingest] áudio extraído: ${audio.length} bytes`);
+          const result = await transcribeAudioBuffer(audio, video.name);
+          if (result.hasContent) {
+            transcript = result.text;
+            console.log(`[ingest] transcrição ok: ${result.text.length} chars`);
+          } else {
+            transcribeWarning = "sem transcrição: áudio sem fala detectável";
+          }
+        } catch (err) {
+          transcribeWarning = `transcrição falhou: ${(err as Error).message}`;
+          console.error(`[ingest] erro na transcrição de "${video.name}":`, err);
+        }
+      }
+
+      // Vídeo completo no Blob, só se o destino realmente precisar (Meta)
+      if (needsMetaBlob) {
+        blobUrl = await uploadTempVideo(video.name, buffer);
+        console.log(`[ingest] vídeo no Blob para reuso posterior`);
       }
     } catch (err) {
-      transcribeWarning = `transcrição falhou: ${(err as Error).message}`;
-      console.error(`[ingest] erro em "${video.name}":`, err);
-      // Se subiu no Blob mas transcrição falhou, apaga pra não deixar órfão
-      if (blobUrl) {
-        await deleteTempVideo(blobUrl);
-        blobUrl = "";
-      }
+      console.error(`[ingest] erro ao baixar "${video.name}":`, err);
+      transcribeWarning = transcribeWarning || `download falhou: ${(err as Error).message}`;
     }
   }
 
-  // 2. Geração de metadados
+  // Geração de metadados
   let row: string[];
   let ok = true;
   let erro: string | undefined;
