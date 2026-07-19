@@ -33,15 +33,16 @@ COMO USAR A TRANSCRIÇÃO (quando presente):
 - Se a transcrição estiver ausente ou muito curta, cai no comportamento antigo: gere metadados a partir do nome do arquivo, honestos e sem inventar fatos que você não pode confirmar.
 
 CALIBRAÇÃO POR PLATAFORMA (aplique de acordo com a lista informada):
-- Multi-plataforma (2 ou 3 destinos): tom neutro que funciona nos três lugares. Descrição um pouco mais enxuta.
+- Multi-plataforma (2+ destinos): tom neutro que funciona em todos os lugares. Descrição um pouco mais enxuta.
 - Só YouTube: descrição pode ser mais longa e "SEO-friendly" (aproveita busca do YouTube). CTA de ${cta.youtube}. Hashtags ficam menos no meio do texto e mais no fim.
 - Só Instagram: mais conversacional e direto. Descrição curta e com energia — Reels ganha com CTA de ${cta.instagram}. Hashtags são importantes e podem ir junto ao texto.
 - Só Facebook: tom que gere conexão emocional funciona muito bem. Descrição pode contar uma mini-história. CTA de ${cta.facebook}.
+- Só TikTok: tom mais cru e direto, com gancho nos primeiros segundos do TEXTO do título/legenda (linguagem nativa da plataforma, menos "produzido"). Legenda pode ser mais curta que nas outras. CTA de ${cta.tiktok}. Hashtags menos formais.
 
 REGRAS GERAIS:
 1. Título: até 70 caracteres, em ${language}, com gancho forte. Use MAIÚSCULAS em UMA palavra-chave de impacto quando fizer sentido. Nunca clickbait mentiroso — o título precisa ser sustentado pelo tema do vídeo.
 2. Descrição: exatamente 2 parágrafos curtos. O primeiro contextualiza o tema com o tom do canal. O segundo é o CTA (nunca genérico).
-3. Hashtags: exatamente 5, começando com #, misturando amplas e específicas do tema. Em uma linha única separadas por espaço. Se o destino inclui YouTube, inclua #Shorts.
+3. Hashtags: exatamente 5, começando com #, misturando amplas e específicas do tema. Em uma linha única separadas por espaço. Se o destino inclui YouTube, inclua #Shorts. Se inclui TikTok, considere incluir #fyp.
 4. Tags (palavras-chave do YouTube): 15 a 25 termos separados por vírgula, somando NO MÁXIMO 440 caracteres. Misture termos em ${language} (maioria) e os 2-3 termos internacionais mais buscados do tema. Se o destino NÃO inclui YouTube, gere um conjunto menor (5-8 termos) — não são usados fora do YouTube.
 5. Se o nome do arquivo for vago demais e não houver transcrição, gere metadados honestos e mais genéricos sobre o tema do canal — nunca invente fatos específicos (datas, nomes, estatísticas) que você não pode confirmar.
 

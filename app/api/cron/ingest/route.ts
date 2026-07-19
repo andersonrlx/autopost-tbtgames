@@ -8,6 +8,7 @@ import { transcribeAudioBuffer } from "@/lib/transcribe";
 import { uploadTempVideo } from "@/lib/blob";
 import { nextPublishDates, spDateString } from "@/lib/schedule";
 import { formatDestinos, parseDestinos } from "@/lib/destinos";
+import { notifyScheduled, notifyScheduleFailed } from "@/lib/sms";
 
 export const maxDuration = 60; // no plano Hobby, é ignorado — teto real é 10s
 export const dynamic = "force-dynamic";
@@ -21,7 +22,9 @@ export const dynamic = "force-dynamic";
  *  3. Se precisar do buffer (Groq ligado, ou destino inclui IG/FB), baixa 1x
  *  4. Se Groq configurado: extrai só o ÁUDIO (via FFmpeg) e transcreve.
  *     Extrair o áudio evita o limite de 25 MB da Groq — o vídeo inteiro
- *     de um Short passa fácil desse teto, o áudio sozinho não chega perto.
+ *     de um Short passa fácil desse teto, o áudio sozinho não chega perto
+ *     (a Groq aplica o limite no arquivo final tanto em upload quanto via
+ *     URL, então a única saída real é mandar um arquivo menor).
  *  5. Se o destino inclui Instagram/Facebook: sobe o VÍDEO pro Blob, para
  *     o publish reaproveitar depois (YouTube usa stream direto do Drive,
  *     não precisa de Blob).
@@ -145,6 +148,17 @@ export async function GET(request: Request) {
   }
 
   await appendRows([row]);
+
+  if (ok) {
+    await notifyScheduled({
+      titulo: row[2],
+      arquivo: video.name,
+      dataAgendada,
+      destinos,
+    });
+  } else {
+    await notifyScheduleFailed({ arquivo: video.name, erro: erro ?? "" });
+  }
 
   return NextResponse.json({
     ok,

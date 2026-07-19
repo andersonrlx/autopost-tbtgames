@@ -1,7 +1,7 @@
 import type { Readable } from "stream";
 import { driveClient } from "./google";
 import { config } from "./env";
-import { TODOS_DESTINOS, type Destino } from "./destinos";
+import { TODOS_DESTINOS, DESTINOS_CONHECIDOS, type Destino } from "./destinos";
 
 export interface DriveVideo {
   id: string;
@@ -47,7 +47,7 @@ async function listFolder(folderId: string): Promise<Omit<DriveVideo, "destinosP
 }
 
 /**
- * Lista todos os vídeos das 4 pastas monitoradas (Todas, YT, IG, FB),
+ * Lista todos os vídeos das 5 pastas monitoradas (Todas, YT, IG, FB, TikTok),
  * etiquetando cada um com seus destinos padrão, e ordenando por createdTime.
  *
  * Ordem cronológica única: quem foi criado no Drive primeiro entra na fila
@@ -55,6 +55,10 @@ async function listFolder(folderId: string): Promise<Omit<DriveVideo, "destinosP
  *
  * Se o mesmo file_id aparecer em duas pastas (raro, mas possível se você
  * mover arquivo entre elas), vence a versão mais permissiva de destinos.
+ *
+ * O TikTok NÃO entra automaticamente pela pasta "Todas" — só pela pasta
+ * dedicada "Só TikTok" ou editando a coluna `destinos` na planilha. Ver
+ * o comentário em destinos.ts sobre por quê.
  */
 export async function listVideos(): Promise<DriveVideo[]> {
   const folders: { id: string; destinos: Destino[] }[] = [
@@ -62,6 +66,7 @@ export async function listVideos(): Promise<DriveVideo[]> {
     { id: config.driveFolderYoutube(), destinos: ["youtube" as Destino] },
     { id: config.driveFolderInstagram(), destinos: ["instagram" as Destino] },
     { id: config.driveFolderFacebook(), destinos: ["facebook" as Destino] },
+    { id: config.driveFolderTiktok(), destinos: ["tiktok" as Destino] },
   ].filter((f) => f.id !== "");
 
   const results = await Promise.all(folders.map((f) => listFolder(f.id)));
@@ -73,7 +78,7 @@ export async function listVideos(): Promise<DriveVideo[]> {
       if (existing) {
         // Duplicata: união dos destinos (mais permissivo vence)
         const merged = new Set([...existing.destinosPadrao, ...folders[i].destinos]);
-        existing.destinosPadrao = TODOS_DESTINOS.filter((d) => merged.has(d));
+        existing.destinosPadrao = DESTINOS_CONHECIDOS.filter((d) => merged.has(d));
       } else {
         map.set(v.id, { ...v, destinosPadrao: [...folders[i].destinos] });
       }

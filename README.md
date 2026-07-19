@@ -2,7 +2,7 @@
 
 Pipeline de publicação automática de **Shorts e Reels** para criadores de conteúdo.
 
-**O fluxo:** você joga os vídeos numa pasta do Google Drive → a IA gera título, descrição, hashtags e tags baseados no que você **fala** no vídeo (via transcrição) → tudo cai numa planilha do Google Sheets (sua camada de revisão) → o sistema publica 1 vídeo por dia no **YouTube**, **Instagram** e **Página do Facebook**, nos dias e horários que você definir — sem abrir vídeo nenhum.
+**O fluxo:** você joga os vídeos numa pasta do Google Drive → a IA gera título, descrição, hashtags e tags baseados no que você **fala** no vídeo (via transcrição) → tudo cai numa planilha do Google Sheets (sua camada de revisão) → o sistema publica no **YouTube**, **Instagram**, **Página do Facebook** e **TikTok** (opcional, ver aviso abaixo), nos dias e horários que você definir — sem abrir vídeo nenhum.
 
 Este é um projeto open, feito pra ser forkado, personalizado e rodado com o custo mais baixo possível (basicamente centavos por mês).
 
@@ -17,10 +17,13 @@ Pastas no Drive ──▶ Cron de ingestão (diário)
                Cron de publicação (dias e horário à sua escolha)
                 ├─▶ YouTube Shorts   (upload direto)
                 ├─▶ Instagram Reels  (via Vercel Blob → Graph API)
-                └─▶ Página Facebook  (via Vercel Blob → Graph API)
+                ├─▶ Página Facebook  (via Vercel Blob → Graph API)
+                └─▶ TikTok           (upload direto — opcional, ver Passo 5.1)
 ```
 
-**Pastas por plataforma (opcional):** além da pasta "Todas", você pode criar pastas dedicadas (`Só YouTube`, `Só Instagram`, `Só Facebook`) para publicar apenas onde interessa. Todos os vídeos entram na mesma fila cronológica: 1 post por dia útil, na ordem de chegada ao Drive.
+⚠️ **TikTok roda em modo privado até você solicitar e passar pela auditoria da TikTok** — sem isso, todo vídeo sai visível só para você. Ver Passo 5.1 para o setup e o caminho da auditoria.
+
+**Pastas por plataforma (opcional):** além da pasta "Todas", você pode criar pastas dedicadas (`Só YouTube`, `Só Instagram`, `Só Facebook`, `Só TikTok`) para publicar apenas onde interessa. Todos os vídeos entram na mesma fila cronológica: 1 post por dia útil, na ordem de chegada ao Drive. **Diferença importante:** o TikTok não entra automaticamente pela pasta "Todas" (só pela pasta dedicada ou editando a coluna `destinos` na planilha) — ver Passo 5.1.
 
 ---
 
@@ -34,8 +37,10 @@ Pastas no Drive ──▶ Cron de ingestão (diário)
 | Anthropic API | Geração de metadados | ~US$ 0,10 |
 | Groq API | Transcrição de áudio | Provavelmente grátis (free tier: 2000 req/dia) |
 | Meta (Facebook/Instagram) | Publicação | **Grátis** |
+| TikTok (Content Posting API) | Publicação | **Grátis** (opcional) |
+| Twilio | Avisos por SMS (opcional) | Poucos dólares/mês (~60 SMS) |
 
-Custo mensal realista: **menos de US$ 0,20**.
+Custo mensal realista: **menos de US$ 0,20** sem SMS; **poucos dólares** se ativar o Twilio.
 
 ---
 
@@ -54,6 +59,7 @@ Custo mensal realista: **menos de US$ 0,20**.
 4. Abra a planilha, revise título/descrição (edite à vontade) e mude a coluna `status` de `novo` para **`aprovado`**.
 5. No dia e horário agendados, o vídeo sai nas plataformas listadas em `destinos`. A planilha é atualizada com os links e o status vira `publicado`.
 6. O painel em `https://seu-projeto.vercel.app` mostra a fila e o que já foi ao ar (somente leitura, bom pra conferir do celular).
+7. (Opcional) Se configurar o Twilio, você recebe um SMS quando um vídeo é agendado e quando é publicado — dizendo em quais plataformas.
 
 > **Modo turbo:** se quiser pular a revisão editorial, mude `AUTO_APPROVE=true` na Vercel. Recomendo manter `false` nas primeiras semanas até confiar nos títulos gerados.
 
@@ -136,6 +142,41 @@ Pré-requisito: conta **profissional** do Instagram vinculada à **Página** do 
    O `access_token` na resposta é seu `META_PAGE_ACCESS_TOKEN`. Este não expira.
 7. **Higiene:** depois de tudo funcionando, vá em Configurações do app → Básico e **redefina o App Secret**. Os tokens já emitidos continuam válidos — mas o secret que passou pela sua história do terminal vira papel picado.
 
+### Passo 5.1 — TikTok (Content Posting API, opcional)
+
+⚠️ **Leia isto antes de configurar:** enquanto o seu app não passar pela auditoria da TikTok, **todo vídeo publicado sai forçosamente como privado** (`SELF_ONLY` — só você vê, nem seus seguidores). Não existe meio-termo como "não listado". A configuração abaixo já deixa tudo funcionando nesse modo privado — é útil pra "aquecer" a automação e confirmar que está tudo certo antes/enquanto você aguarda a auditoria aprovar.
+
+**Setup técnico:**
+
+1. Crie uma conta em [developers.tiktok.com](https://developers.tiktok.com), crie uma organização e um app dentro dela.
+2. Anote o **Client Key** e o **Client Secret** do app → `TIKTOK_CLIENT_KEY` e `TIKTOK_CLIENT_SECRET`.
+3. No app, adicione os produtos **Login Kit** e **Content Posting API**. Dentro do Content Posting API, habilite **Direct Post**.
+4. Em **Login Kit → Redirect URI**, cadastre exatamente:
+   ```
+   http://localhost:8787/callback
+   ```
+5. Solicite os escopos `user.info.basic` e `video.publish`.
+6. Na sua máquina, gere o refresh token:
+   ```bash
+   npm run tiktok-token
+   ```
+   Abre a URL exibida, autoriza com a conta do TikTok do canal, e o `TIKTOK_REFRESH_TOKEN` aparece no terminal.
+7. Cadastre `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_REFRESH_TOKEN` na Vercel. Deixe `TIKTOK_PRIVACY=SELF_ONLY` (o padrão) até a auditoria aprovar.
+8. Crie a pasta `Shorts - Só TikTok` no Drive (o TikTok não entra automaticamente pela pasta "Todas" — veja o porquê logo abaixo) e cadastre o ID em `DRIVE_FOLDER_ID_TK`.
+
+**Caminho das pedras pra pedir a auditoria (quando quiser sair do modo privado):**
+
+1. No painel do app, procure a opção de **aplicar para auditoria** do Content Posting API / Direct Post.
+2. Você vai precisar preencher:
+   - **URL de política de privacidade** e **termos de uso** — hospede duas páginas simples (podem ser markdown estático no mesmo projeto, ou um Google Doc público) descrevendo o que a ferramenta faz com os dados.
+   - **Vídeo de demonstração** mostrando o fluxo completo de publicação funcionando.
+   - **Descrição do app**: explique o objetivo (gerenciar publicação de conteúdo de criadores) e — isso importa — a TikTok declara nos critérios que apps **não podem ser limitados a uso interno/privado**. Se a ferramenta for usada por mais de um criador/canal (o que este projeto foi desenhado pra permitir), mencione isso explicitamente na resposta; é um argumento que ajuda a aprovação.
+3. **Seja honesto sobre não ter uma UI de consentimento por vídeo.** As diretrizes da TikTok pressupõem um app onde o criador vê e confirma cada publicação numa tela antes de ir ao ar (nível de privacidade, permissões de duet/stitch etc). Este pipeline é headless — a "aprovação" acontece na planilha, não numa tela do TikTok. Isso pode gerar idas e voltas no processo de revisão; não é motivo pra desistir, só pra não se surpreender se pedirem ajustes.
+4. O prazo costuma ser de alguns dias a duas semanas. Se for reprovado, a resposta geralmente vem com o motivo — dá pra ajustar e reenviar.
+5. Aprovado, é só trocar `TIKTOK_PRIVACY` de `SELF_ONLY` para `PUBLIC_TO_EVERYONE` na Vercel e redeploy. Nenhuma outra mudança de código necessária.
+
+**Por que o TikTok não entra na pasta "Todas":** diferente do YouTube/Instagram/Facebook, o TikTok fica em modo experimental (privado) até a auditoria aprovar. Fica mais seguro exigir opt-in explícito — pela pasta dedicada ou editando a coluna `destinos` na planilha — em vez de todo vídeo da pasta "Todas" ganhar automaticamente um destino que ainda não é público de verdade.
+
 ### Passo 6 — Chave da Anthropic
 
 Crie uma API key em [console.anthropic.com](https://console.anthropic.com) → `ANTHROPIC_API_KEY`. Adicione uns US$ 5 de crédito — sobra pra muitos meses.
@@ -154,6 +195,18 @@ Se você preencher `GROQ_API_KEY`, o ingest extrai o áudio de cada vídeo (via 
 
 Sem essa chave o pipeline segue funcionando; só perde a etapa de transcrição.
 
+### Passo 7.1 — Twilio (avisos por SMS, opcional)
+
+Se você preencher as 4 variáveis do Twilio, o pipeline manda um SMS em dois momentos: quando um vídeo é **agendado** (ingest) e quando é **publicado** (mostrando em quais plataformas). Se a geração de metadados falhar no ingest, você também recebe um aviso pra checar a planilha.
+
+1. Crie uma conta em [console.twilio.com](https://console.twilio.com). O **Account SID** e o **Auth Token** aparecem na página inicial do console → `TWILIO_ACCOUNT_SID` e `TWILIO_AUTH_TOKEN`.
+2. Compre ou ative um número Twilio para enviar os SMS (**Phone Numbers → Buy a number**) → `TWILIO_FROM_NUMBER` (formato E.164, ex: `+18445551234`).
+3. `NOTIFY_PHONE_NUMBER` é o número que recebe os avisos (o seu celular), também em E.164 (ex: `+5511999998888`).
+4. **Se a conta for trial (grátis)**: o Twilio só manda SMS pra números **verificados** — cadastre seu celular em Phone Numbers → Verified Caller IDs antes de testar. Contas trial também prefixam as mensagens com "Sent from your Twilio trial account". Pra remover isso e enviar pra qualquer número, é preciso fazer upgrade da conta (ainda pré-pago, sem mensalidade).
+5. Custo: poucos centavos por SMS enviado. No seu volume (agendamento + publicação de ~30 vídeos/mês = ~60 SMS), o gasto fica na casa de poucos dólares por mês.
+
+Sem essas variáveis o pipeline funciona normal, só sem os avisos.
+
 ### Passo 8 — Variáveis na Vercel
 
 Em **Settings → Environment Variables** do projeto, cadastre **todas** as variáveis do `.env.example` (o `BLOB_READ_WRITE_TOKEN` já foi criado no Passo 1). Gere o `CRON_SECRET` com:
@@ -166,13 +219,15 @@ Depois faça um redeploy (**Deployments → ⋯ → Redeploy**) para os crons ca
 
 ### Passo 9 — Ajuste os horários de publicação
 
-Abra `vercel.json` e ajuste o cron de publicação para os dias e horário que fazem sentido pro seu canal. O padrão é seg/ter/qui/sex às 21h UTC (18h em São Paulo).
+Abra `vercel.json` — por padrão o projeto já vem com **2 disparos diários** de publicação (meio-dia e 18h de São Paulo), pensados pra permitir publicar esporadicamente num horário alternativo sem precisar disparar manualmente. Ajuste os horários (ou remova um deles) conforme fizer sentido pro seu canal:
 
 ```json
-"schedule": "0 21 * * 1,2,4,5"
+"schedule": "0 15 * * *"
 ```
 
-Formato: `minuto hora dia_do_mês mês dia_da_semana` (dia da semana: 0=domingo, 1=seg, ..., 6=sáb). Horário em **UTC** — descubra seu offset e ajuste. Cheatsheet: [crontab.guru](https://crontab.guru).
+Formato: `minuto hora dia_do_mês mês dia_da_semana`. Horário em **UTC** — descubra seu offset e ajuste. Cheatsheet: [crontab.guru](https://crontab.guru).
+
+**Importante sobre múltiplos disparos por dia:** cada disparo do cron de publicação processa **no máximo 1 vídeo** (o primeiro aprovado com data vencida, na ordem da planilha). Se só 1 vídeo estiver aprovado num dia, o primeiro disparo que rodar publica ele — o outro não encontra nada e não faz nada, sem risco de duplicar. Se você aprovar 2 vídeos pro mesmo dia, cada disparo publica um.
 
 Também ajuste `lib/schedule.ts` se você quer publicar em outros dias da semana. A linha:
 ```typescript
@@ -207,11 +262,11 @@ O pipeline foi desenhado para **Shorts/Reels** (arquivos de até ~150 MB, mas id
 | `titulo`, `descricao`, `hashtags`, `tags` | Gerados pela IA — **edite à vontade antes de aprovar** |
 | `status` | `novo` → **`aprovado`** (você muda) → `publicando` → `publicado` / `erro` |
 | `data_agendada` | Data da publicação (edite se quiser mudar) |
-| `youtube` / `instagram` / `facebook` | Links/IDs preenchidos após publicar |
+| `youtube` / `instagram` / `facebook` / `tiktok` | Links/IDs preenchidos após publicar |
 | `erro` | Avisos ou mensagens de erro |
 | `criado_em` | Quando a linha entrou na fila |
-| `destinos` | Plataformas onde publicar (`youtube,instagram,facebook`). Vazio = todas. **Edite antes de aprovar** para restringir |
-| `blob_url` | URL temporária do vídeo no Vercel Blob (uso interno, não mexa) |
+| `destinos` | Plataformas onde publicar (`youtube,instagram,facebook,tiktok`). Vazio = `youtube,instagram,facebook` (retrocompatibilidade — **não** inclui TikTok). **Edite antes de aprovar** para restringir ou adicionar `tiktok` |
+| `blob_url` | URL temporária do vídeo no Vercel Blob, usada pelo Instagram/Facebook (uso interno, não mexa). O TikTok não usa esta coluna |
 
 **Se der erro em uma plataforma:** as outras não são desfeitas — o que subiu fica com o link preenchido na planilha. Corrija a causa, mude o `status` de volta para **`aprovado`**, e na próxima execução o sistema tenta de novo **apenas** as plataformas com a coluna vazia. Nada é repostado.
 
@@ -244,22 +299,25 @@ Se tudo funcionou, volte `YT_PRIVACY` pra `public` e deixe o cron rodar sozinho.
 channel.config.ts             # 👈 personalize aqui: nome, tom, contexto do canal
 app/
   api/cron/ingest/route.ts    # detecta vídeos novos + transcrição + IA + planilha
-  api/cron/publish/route.ts   # publica nas 3 plataformas nos horários
+  api/cron/publish/route.ts   # publica nas plataformas configuradas, nos horários
   page.tsx                    # painel de status (somente leitura)
 lib/
-  ai.ts        # monta o prompt com channel.config.ts e chama Anthropic
-  audio.ts     # extração de áudio via FFmpeg (para a transcrição)
-  destinos.ts  # lógica de plataformas por vídeo
-  drive.ts     # listagem e download dos vídeos das pastas
-  sheets.ts    # a planilha-fila
+  ai.ts         # monta o prompt (calibrado por plataforma) com channel.config.ts
+  audio.ts      # extração de áudio via FFmpeg (para a transcrição)
+  destinos.ts   # lógica de quais plataformas cada vídeo vai
+  drive.ts      # listagem e download dos vídeos das pastas
+  sheets.ts     # a planilha-fila
   transcribe.ts # Groq / Whisper
-  youtube.ts   # upload de Shorts
-  meta.ts      # Instagram Reels + Página do Facebook (Graph API)
-  blob.ts      # hospedagem temporária dos vídeos
-  schedule.ts  # datas de publicação (dias da semana)
+  youtube.ts    # upload de Shorts
+  meta.ts       # Instagram Reels + Página do Facebook (Graph API)
+  tiktok.ts     # publicação no TikTok (Content Posting API, FILE_UPLOAD)
+  blob.ts       # hospedagem temporária dos vídeos
+  schedule.ts   # datas de publicação (dias da semana)
+  sms.ts        # avisos por SMS via Twilio (agendamento/publicação)
 scripts/
-  get-google-token.mjs        # gera o refresh token do Google (roda 1x)
-vercel.json                   # crons de ingestão e publicação
+  get-google-token.mjs  # gera o refresh token do Google (roda 1x)
+  get-tiktok-token.mjs  # gera o refresh token do TikTok (roda 1x)
+vercel.json              # crons de ingestão e publicação
 ```
 
 ---
@@ -267,9 +325,9 @@ vercel.json                   # crons de ingestão e publicação
 ## Ideias de evolução
 
 - **Coluna `notas`** na planilha, lida pela IA para contexto extra por vídeo
-- **TikTok e Kwai** (a estrutura de `meta.ts` serve de modelo)
-- **Notificação no Telegram/WhatsApp** quando um vídeo entra na fila ou dá erro
-- **Múltiplos slots por dia** (mais de 1 publicação diária)
+- **Kwai** e outras plataformas de vídeo curto (a estrutura de `tiktok.ts`/`meta.ts` serve de modelo)
+- **Notificação no Telegram** como alternativa/complemento ao SMS
+- **Múltiplos slots por dia** com controle explícito de horário por linha (hoje o horário é implícito pela ordem da planilha quando há mais de um vídeo aprovado no mesmo dia)
 
 ---
 

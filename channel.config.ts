@@ -60,6 +60,7 @@ VOCABULÁRIO/EXPRESSÕES RECORRENTES: [liste palavras que você usa muito, se ho
     youtube: "inscrição no canal (para ver mais conteúdo assim)",
     instagram: "comentário e salvar (ajuda muito o alcance no Reels)",
     facebook: "compartilhamento (ajude a espalhar!)",
+    tiktok: "comentário e duet (é o que mais ajuda o vídeo a viralizar)",
   },
 
   /**

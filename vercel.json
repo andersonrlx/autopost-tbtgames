@@ -6,7 +6,11 @@
     },
     {
       "path": "/api/cron/publish",
-      "schedule": "0 21 * * 1,2,4,5"
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/publish",
+      "schedule": "0 21 * * *"
     }
   ]
 }

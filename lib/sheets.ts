@@ -3,13 +3,15 @@ import { config } from "./env";
 
 /**
  * A planilha é a "fila" e também a camada de revisão editorial.
- * Colunas (A → O):
+ * Colunas (A → P):
  *  A file_id | B arquivo | C titulo | D descricao | E hashtags | F tags
  *  G status  | H data_agendada | I youtube | J instagram | K facebook
- *  L erro    | M criado_em | N destinos | O blob_url
+ *  L erro    | M criado_em | N destinos | O blob_url | P tiktok
  *
  * `blob_url` guarda a URL temporária no Vercel Blob (usada para transcrição
- * e reaproveitada pelo publish). Fica vazia após a publicação (blob apagado).
+ * e reaproveitada pelo publish nas plataformas Meta). Fica vazia após a
+ * publicação (blob apagado). O TikTok NÃO usa blob_url — publica via
+ * FILE_UPLOAD direto (ver lib/tiktok.ts).
  *
  * Status possíveis: novo → aprovado → publicando → publicado | erro
  */
@@ -30,9 +32,10 @@ export const HEADER = [
   "criado_em",
   "destinos",
   "blob_url",
+  "tiktok",
 ] as const;
 
-const LAST_COL = "O"; // atualizar se o header crescer
+const LAST_COL = "P"; // atualizar se o header crescer
 
 export interface QueueRow {
   rowNumber: number; // linha real na planilha (1-indexado, header = 1)
@@ -49,8 +52,9 @@ export interface QueueRow {
   facebook: string;
   erro: string;
   criadoEm: string;
-  destinos: string; // "youtube,instagram,facebook" — vazio = todos (retrocompat)
+  destinos: string; // "youtube,instagram,facebook,tiktok" — vazio = TODOS_DESTINOS (retrocompat, sem tiktok)
   blobUrl: string;  // URL no Vercel Blob (vazio = não subiu ou já apagado)
+  tiktok: string;   // publish_id do TikTok, preenchido após publicar
 }
 
 function tabRange(range: string) {
@@ -100,6 +104,7 @@ export async function getRows(): Promise<QueueRow[]> {
     criadoEm: v[12] ?? "",
     destinos: v[13] ?? "",
     blobUrl: v[14] ?? "",
+    tiktok: v[15] ?? "",
   }));
 }
 

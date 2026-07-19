@@ -1,5 +1,5 @@
 import { getRows, type QueueRow } from "@/lib/sheets";
-import { parseDestinos, TODOS_DESTINOS, type Destino } from "@/lib/destinos";
+import { parseDestinos, DESTINOS_CONHECIDOS, type Destino } from "@/lib/destinos";
 import { channelConfig } from "@/channel.config";
 
 export const dynamic = "force-dynamic";
@@ -9,13 +9,14 @@ const DEST_LABEL: Record<Destino, string> = {
   youtube: "YT",
   instagram: "IG",
   facebook: "FB",
+  tiktok: "TT",
 };
 
 function DestinosBadges({ raw }: { raw: string }) {
   const destinos = new Set(parseDestinos(raw));
   return (
     <span className="dests">
-      {TODOS_DESTINOS.map((d) => (
+      {DESTINOS_CONHECIDOS.map((d) => (
         <span
           key={d}
           className={`dest ${destinos.has(d) ? "dest-on" : "dest-off"}`}
@@ -144,6 +145,7 @@ export default async function Home() {
                         )}
                         {r.instagram && <span title={r.instagram}>IG ✓</span>}
                         {r.facebook && <span title={r.facebook}>FB ✓</span>}
+                        {r.tiktok && <span title={r.tiktok}>TT ✓</span>}
                       </td>
                     </tr>
                   ))}

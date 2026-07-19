@@ -4,21 +4,37 @@ import { getVideoStream, getVideoBuffer } from "@/lib/drive";
 import { getRows, updateRow } from "@/lib/sheets";
 import { uploadShort } from "@/lib/youtube";
 import { publishInstagramReel, publishFacebookVideo } from "@/lib/meta";
+import { publishToTikTok } from "@/lib/tiktok";
 import { uploadTempVideo, deleteTempVideo } from "@/lib/blob";
 import { spDateString } from "@/lib/schedule";
 import { parseDestinos } from "@/lib/destinos";
+import { notifyPublished } from "@/lib/sms";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 /**
- * PUBLICAÇÃO (roda seg/ter/qui/sex às 18h de São Paulo = 21h UTC)
+ * PUBLICAÇÃO (cron roda 2x por dia — 12h e 18h de São Paulo — mas só publica
+ * se houver vídeo aprovado com data_agendada <= hoje. O agendamento em si
+ * continua só em seg/ter/qui/sex, definido em lib/schedule.ts; os dois
+ * horários diários servem para permitir publicar esporadicamente ao meio-dia
+ * quando você aprovar/agendar uma linha pra isso na planilha.
+ *
+ * Cada disparo processa NO MÁXIMO 1 vídeo (o primeiro aprovado+vencido que
+ * encontrar, na ordem da planilha). Se só 1 vídeo estiver aprovado num dia,
+ * o disparo que rodar primeiro (meio-dia ou 18h) publica ele; o outro
+ * disparo não encontra nada e não faz nada — sem risco de duplicar.
+ * Se você aprovar 2 vídeos pro mesmo dia, o disparo de meio-dia publica o
+ * primeiro da planilha e o de 18h publica o segundo.)
  *
  * 1. Busca na planilha o próximo vídeo aprovado com data <= hoje
  * 2. Sobe no YouTube (Short)
- * 3. Sobe o arquivo temporariamente no Vercel Blob
+ * 3. Sobe o arquivo temporariamente no Vercel Blob (para Instagram/Facebook)
  * 4. Publica o Reel no Instagram e o vídeo na Página do Facebook
- * 5. Apaga o arquivo temporário e marca "publicado" na planilha
+ * 5. Publica no TikTok (upload direto, sem depender do Blob — ver lib/tiktok.ts).
+ *    Enquanto o app não passar pela auditoria da TikTok, sai sempre como
+ *    SELF_ONLY (só você vê) — ver TIKTOK_PRIVACY no README.
+ * 6. Apaga o arquivo temporário do Blob e marca "publicado" na planilha
  *
  * Cada plataforma é independente: se uma falhar, as outras não são desfeitas
  * e o erro fica registrado na coluna "erro" para você reprocessar.
@@ -56,7 +72,7 @@ export async function GET(request: Request) {
   const destinos = new Set(parseDestinos(next.destinos));
 
   const errors: string[] = [];
-  const links: { youtube?: string; instagram?: string; facebook?: string } = {};
+  const links: { youtube?: string; instagram?: string; facebook?: string; tiktok?: string } = {};
   const skipped: string[] = [];
   const caption = `${next.titulo}\n\n${next.descricao}\n\n${next.hashtags}`;
 
@@ -148,10 +164,41 @@ export async function GET(request: Request) {
     await updateRow(next.rowNumber, { blob_url: blobUrl });
   }
 
+  // --- 3. TikTok (FILE_UPLOAD direto do buffer — não usa Blob nem URL
+  // pública, ver lib/tiktok.ts sobre por quê). Baixa seu próprio buffer,
+  // independente do fluxo de Blob usado pelo Instagram/Facebook — mais
+  // simples do que acoplar ao ciclo de vida do Blob, ao custo de um
+  // download a mais do Drive quando os dois grupos de destino coexistem
+  // (Shorts são pequenos, o custo é desprezível).
+  const needsTk = destinos.has("tiktok") && !next.tiktok;
+  if (!destinos.has("tiktok")) skipped.push("tiktok");
+  if (next.tiktok) links.tiktok = next.tiktok;
+
+  if (needsTk) {
+    try {
+      const buffer = await getVideoBuffer(next.fileId);
+      const tk = await publishToTikTok(buffer, caption);
+      links.tiktok = tk.publishId;
+      await updateRow(next.rowNumber, { tiktok: tk.publishId });
+    } catch (err) {
+      errors.push(`TikTok: ${(err as Error).message}`);
+    }
+  }
+
   const finalStatus = errors.length === 0 ? "publicado" : "erro";
   await updateRow(next.rowNumber, {
     status: finalStatus,
     erro: errors.join(" | "),
+  });
+
+  const publicadas = Object.keys(links).filter(
+    (k) => !skipped.includes(k)
+  );
+  await notifyPublished({
+    titulo: next.titulo,
+    publicadas,
+    ignoradas: skipped,
+    erros: errors,
   });
 
   return NextResponse.json({
